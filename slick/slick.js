@@ -17,12 +17,10 @@
 /* global window, document, define, jQuery, setInterval, clearInterval */
 ;(function(factory) {
     'use strict';
-    if (typeof define === 'function' && define.amd) {
-        define(['jquery'], factory);
-    } else if (typeof exports !== 'undefined') {
-        module.exports = factory(require('jquery'));
-    } else {
-        factory(jQuery);
+    try {
+        factory(cash || jQuery);
+    } catch (e) {
+        console.error(e);
     }
 
 }(function($) {
@@ -160,16 +158,16 @@
                 _.visibilityChange = 'webkitvisibilitychange';
             }
 
-            _.autoPlay = $.proxy(_.autoPlay, _);
-            _.autoPlayClear = $.proxy(_.autoPlayClear, _);
-            _.autoPlayIterator = $.proxy(_.autoPlayIterator, _);
-            _.changeSlide = $.proxy(_.changeSlide, _);
-            _.clickHandler = $.proxy(_.clickHandler, _);
-            _.selectHandler = $.proxy(_.selectHandler, _);
-            _.setPosition = $.proxy(_.setPosition, _);
-            _.swipeHandler = $.proxy(_.swipeHandler, _);
-            _.dragHandler = $.proxy(_.dragHandler, _);
-            _.keyHandler = $.proxy(_.keyHandler, _);
+            _.autoPlay = _.autoPlay.bind(_);
+            _.autoPlayClear = _.autoPlayClear.bind(_);
+            _.autoPlayIterator = _.autoPlayIterator.bind(_);
+            _.changeSlide = _.changeSlide.bind(_);
+            _.clickHandler = _.clickHandler.bind(_);
+            _.selectHandler = _.selectHandler.bind(_);
+            _.setPosition = _.setPosition.bind(_);
+            _.swipeHandler = _.swipeHandler.bind(_);
+            // _.dragHandler = _.dragHandler.bind(_);
+            _.keyHandler = _.keyHandler.bind(_);
 
             _.instanceUid = instanceUid++;
 
@@ -230,7 +228,7 @@
 
         _.$slides = _.$slideTrack.children(this.options.slide);
 
-        _.$slideTrack.children(this.options.slide).detach();
+        _.$slideTrack.children(this.options.slide).remove(); // replace `.detach()`
 
         _.$slideTrack.append(_.$slides);
 
@@ -248,9 +246,12 @@
         var _ = this;
         if (_.options.slidesToShow === 1 && _.options.adaptiveHeight === true && _.options.vertical === false) {
             var targetHeight = _.$slides.eq(_.currentSlide).outerHeight(true);
-            _.$list.animate({
-                height: targetHeight
-            }, _.options.speed);
+
+            _.doAnimation(
+                _.$list,
+                { height: targetHeight },
+                { duration: _.options.speed}
+            );
         }
     };
 
@@ -266,73 +267,43 @@
         }
         if (_.transformsEnabled === false) {
             if (_.options.vertical === false) {
-                _.$slideTrack.animate({
-                    left: targetLeft
-                }, _.options.speed, _.options.easing, callback);
+                _.doAnimation(
+                    _.$slideTrack,
+                    { left: targetLeft },
+                    { duration: _.options.speed, easing: _.options.easing },
+                    callback
+                )
             } else {
-                _.$slideTrack.animate({
-                    top: targetLeft
-                }, _.options.speed, _.options.easing, callback);
+                _.doAnimation(
+                    _.$slideTrack,
+                    { top: targetLeft },
+                    { duration: _.options.speed, easing: _.options.easing },
+                    callback
+                )
             }
-
         } else {
+            _.applyTransition();
+            targetLeft = Math.ceil(targetLeft);
 
-            if (_.cssTransitions === false) {
-                if (_.options.rtl === true) {
-                    _.currentLeft = -(_.currentLeft);
-                }
-                $({
-                    animStart: _.currentLeft
-                }).animate({
-                    animStart: targetLeft
-                }, {
-                    duration: _.options.speed,
-                    easing: _.options.easing,
-                    step: function(now) {
-                        now = Math.ceil(now);
-                        if (_.options.vertical === false) {
-                            animProps[_.animType] = 'translate(' +
-                                now + 'px, 0px)';
-                            _.$slideTrack.css(animProps);
-                        } else {
-                            animProps[_.animType] = 'translate(0px,' +
-                                now + 'px)';
-                            _.$slideTrack.css(animProps);
-                        }
-                    },
-                    complete: function() {
-                        if (callback) {
-                            callback.call();
-                        }
-                    }
-                });
-
+            if (_.options.vertical === false) {
+                animProps[_.animType] = 'translate3d(' + targetLeft + 'px, 0px, 0px)';
             } else {
-
-                _.applyTransition();
-                targetLeft = Math.ceil(targetLeft);
-
-                if (_.options.vertical === false) {
-                    animProps[_.animType] = 'translate3d(' + targetLeft + 'px, 0px, 0px)';
-                } else {
-                    animProps[_.animType] = 'translate3d(0px,' + targetLeft + 'px, 0px)';
-                }
-                _.$slideTrack.css(animProps);
-
-                if (callback) {
-                    setTimeout(function() {
-
-                        _.disableTransition();
-
-                        callback.call();
-                    }, _.options.speed);
-                }
-
+                animProps[_.animType] = 'translate3d(0px,' + targetLeft + 'px, 0px)';
             }
+            _.$slideTrack.css(animProps);
 
+            if (callback) {
+                setTimeout(function() {
+
+                    _.disableTransition();
+
+                    callback.call();
+                }, _.options.speed);
+            }
         }
 
-    };
+
+    }
 
     Slick.prototype.getNavTarget = function() {
 
@@ -682,6 +653,12 @@
 
     Slick.prototype.changeSlide = function(event, dontAnimate) {
 
+        if (!(event instanceof Event)) {
+            var eventData = event;
+            event = arguments[1];
+            event.data = eventData;
+        }
+
         var _ = this,
             $target = $(event.currentTarget),
             indexOffset, slideOffset, unevenOffset;
@@ -759,8 +736,8 @@
 
             $('li', _.$dots)
                 .off('click.slick', _.changeSlide)
-                .off('mouseenter.slick', $.proxy(_.interrupt, _, true))
-                .off('mouseleave.slick', $.proxy(_.interrupt, _, false));
+                .off('mouseenter.slick', _.interrupt.bind(_, true)) // remove `.proxy()`
+                .off('mouseleave.slick', _.interrupt.bind(_, false)); // remove `.proxy()`
 
             if (_.options.accessibility === true) {
                 _.$dots.off('keydown.slick', _.keyHandler);
@@ -802,7 +779,7 @@
 
         $(window).off('resize.slick.slick-' + _.instanceUid, _.resize);
 
-        $('[draggable!=true]', _.$slideTrack).off('dragstart', _.preventDefault);
+        $('[draggable="false"]', _.$slideTrack).off('dragstart', _.preventDefault);
 
         $(window).off('load.slick.slick-' + _.instanceUid, _.setPosition);
 
@@ -812,8 +789,8 @@
 
         var _ = this;
 
-        _.$list.off('mouseenter.slick', $.proxy(_.interrupt, _, true));
-        _.$list.off('mouseleave.slick', $.proxy(_.interrupt, _, false));
+        _.$list.off('mouseenter.slick', _.interrupt.bind(_, true)); // remove `.proxy()`
+        _.$list.off('mouseleave.slick', _.interrupt.bind(_, false)); // remove `.proxy()`
 
     };
 
@@ -851,7 +828,7 @@
 
         _.cleanUpEvents();
 
-        $('.slick-cloned', _.$slider).detach();
+        $('.slick-cloned', _.$slider).remove(); // replace `.detach()`
 
         if (_.$dots) {
             _.$dots.remove();
@@ -892,11 +869,11 @@
                     $(this).attr('style', $(this).data('originalStyling'));
                 });
 
-            _.$slideTrack.children(this.options.slide).detach();
+            _.$slideTrack.children(this.options.slide).remove(); // replace `.detach()`
 
-            _.$slideTrack.detach();
+            _.$slideTrack.remove(); // replace `.detach()`
 
-            _.$list.detach();
+            _.$list.remove(); // replace `.detach()`
 
             _.$slider.append(_.$slides);
         }
@@ -930,6 +907,42 @@
 
     };
 
+    Slick.prototype.doAnimation = function(elCol, keyframes, opts, callback) {
+        var _ = this;
+
+        if (typeof opts === "function") {
+            callback = opts;
+        } else if (typeof opts !== "object") {
+            opts = {
+                duration: _.options.speed,
+                easing: _.options.easing
+            };
+        } else {
+            if (typeof opts.duration !== "number") opts.duration = _.options.speed;
+            if (typeof opts.easing !== "string") opts.easing = _.options.easting;
+        }
+
+        if (elCol.length > 1) {
+            Evergage.cashDom.each(elCol, function(i) {
+                $(this)[0].animate(keyframes, opts);
+            })
+
+        } else {
+            elCol[0].animate(keyframes, opts);
+            elCol.on('webkitAnimationEnd oAnimationEnd msAnimationEnd animationend', function(event) {
+                console.log(event);
+                // if (event.animationName === 'easeOutPane' && isvhPane.attr('view-state') === 'closed') {
+                //     $('.isvh-history-items-list').empty();
+                // }
+            });
+        }
+        if (typeof callback === "function") {
+            setTimeout(function() {
+                callback();
+            }, opts.duration);
+        }
+    }
+
     Slick.prototype.fadeSlide = function(slideIndex, callback) {
 
         var _ = this;
@@ -940,9 +953,12 @@
                 zIndex: _.options.zIndex
             });
 
-            _.$slides.eq(slideIndex).animate({
-                opacity: 1
-            }, _.options.speed, _.options.easing, callback);
+            _.doAnimation(
+                _.$slides.eq(slideIndex),
+                { opacity: 1 },
+                { duration: _.options.speed, easing: _.options.easing },
+                callback
+            );
 
         } else {
 
@@ -972,10 +988,11 @@
 
         if (_.cssTransitions === false) {
 
-            _.$slides.eq(slideIndex).animate({
-                opacity: 0,
-                zIndex: _.options.zIndex - 2
-            }, _.options.speed, _.options.easing);
+            _.doAnimation(
+                _.$slides.eq(slideIndex),
+                { opacity: 0, zIndex: _.options.zIndex - 2 },
+                { duration: _.options.speed, easing: _.options.easing }
+            );
 
         } else {
 
@@ -1000,7 +1017,7 @@
 
             _.unload();
 
-            _.$slideTrack.children(this.options.slide).detach();
+            _.$slideTrack.children(this.options.slide).remove(); // replace `.detach()`
 
             _.$slidesCache.filter(filter).appendTo(_.$slideTrack);
 
@@ -1019,12 +1036,12 @@
             .off('focus.slick blur.slick')
             .on(
                 'focus.slick',
-                '*', 
+                '*',
                 function(event) {
                     var $sf = $(this);
 
                     setTimeout(function() {
-                        if( _.options.pauseOnFocus ) {
+                        if ( _.options.pauseOnFocus ) {
                             if ($sf.is(':focus')) {
                                 _.focussed = true;
                                 _.autoPlay();
@@ -1034,12 +1051,12 @@
                 }
             ).on(
                 'blur.slick',
-                '*', 
+                '*',
                 function(event) {
                     var $sf = $(this);
 
                     // When a blur occurs on any elements within the slider we become unfocused
-                    if( _.options.pauseOnFocus ) {
+                    if ( _.options.pauseOnFocus ) {
                         _.focussed = false;
                         _.autoPlay();
                     }
@@ -1290,7 +1307,6 @@
         var _ = this;
 
         if (!$(_.$slider).hasClass('slick-initialized')) {
-
             $(_.$slider).addClass('slick-initialized');
 
             _.buildRows();
@@ -1376,7 +1392,8 @@
             }).eq(_.currentSlide).find('button').attr({
                 'aria-selected': 'true',
                 'tabindex': '0'
-            }).end();
+            });
+            // }).end();
         }
 
         for (var i=_.currentSlide, max=i+_.options.slidesToShow; i < max; i++) {
@@ -1398,14 +1415,20 @@
         if (_.options.arrows === true && _.slideCount > _.options.slidesToShow) {
             _.$prevArrow
                .off('click.slick')
-               .on('click.slick', {
-                    message: 'previous'
-               }, _.changeSlide);
+               .on('click.slick',
+                    _.changeSlide.bind(
+                        null,
+                        { message: 'previous' }
+                    )
+                );
             _.$nextArrow
                .off('click.slick')
-               .on('click.slick', {
-                    message: 'next'
-               }, _.changeSlide);
+               .on('click.slick',
+                    _.changeSlide.bind(
+                        null,
+                        { message: 'next' }
+                    )
+                );
 
             if (_.options.accessibility === true) {
                 _.$prevArrow.on('keydown.slick', _.keyHandler);
@@ -1420,9 +1443,7 @@
         var _ = this;
 
         if (_.options.dots === true && _.slideCount > _.options.slidesToShow) {
-            $('li', _.$dots).on('click.slick', {
-                message: 'index'
-            }, _.changeSlide);
+            $('li', _.$dots).on('click.slick', _.changeSlide.bind(null, { message: 'index' }));
 
             if (_.options.accessibility === true) {
                 _.$dots.on('keydown.slick', _.keyHandler);
@@ -1432,8 +1453,8 @@
         if (_.options.dots === true && _.options.pauseOnDotsHover === true && _.slideCount > _.options.slidesToShow) {
 
             $('li', _.$dots)
-                .on('mouseenter.slick', $.proxy(_.interrupt, _, true))
-                .on('mouseleave.slick', $.proxy(_.interrupt, _, false));
+                .on('mouseenter.slick', _.interrupt.bind(_, true)) // remove `.proxy()`
+                .on('mouseleave.slick', _.interrupt.bind(_, false)); // remove `.proxy()`
 
         }
 
@@ -1445,8 +1466,8 @@
 
         if ( _.options.pauseOnHover ) {
 
-            _.$list.on('mouseenter.slick', $.proxy(_.interrupt, _, true));
-            _.$list.on('mouseleave.slick', $.proxy(_.interrupt, _, false));
+            _.$list.on('mouseenter.slick', _.interrupt.bind(_, true)); // remove `.proxy()`
+            _.$list.on('mouseleave.slick', _.interrupt.bind(_, false)); // remove `.proxy()`
 
         }
 
@@ -1461,22 +1482,14 @@
         _.initDotEvents();
         _.initSlideEvents();
 
-        _.$list.on('touchstart.slick mousedown.slick', {
-            action: 'start'
-        }, _.swipeHandler);
-        _.$list.on('touchmove.slick mousemove.slick', {
-            action: 'move'
-        }, _.swipeHandler);
-        _.$list.on('touchend.slick mouseup.slick', {
-            action: 'end'
-        }, _.swipeHandler);
-        _.$list.on('touchcancel.slick mouseleave.slick', {
-            action: 'end'
-        }, _.swipeHandler);
+        _.$list.on('touchstart.slick mousedown.slick',  _.swipeHandler.bind(null, { action: 'start' }));
+        _.$list.on('touchmove.slick mousemove.slick',  _.swipeHandler.bind(null, { action: 'move' }));
+        _.$list.on('touchend.slick mouseup.slick',  _.swipeHandler.bind(null, { action: 'end' }));
+        _.$list.on('touchcancel.slick mouseleave.slick',  _.swipeHandler.bind(null, { action: 'end' }));
 
         _.$list.on('click.slick', _.clickHandler);
 
-        $(document).on(_.visibilityChange, $.proxy(_.visibility, _));
+        $(document).on(_.visibilityChange, _.visibility.bind(_)); // remove `.proxy()`
 
         if (_.options.accessibility === true) {
             _.$list.on('keydown.slick', _.keyHandler);
@@ -1486,11 +1499,11 @@
             $(_.$slideTrack).children().on('click.slick', _.selectHandler);
         }
 
-        $(window).on('orientationchange.slick.slick-' + _.instanceUid, $.proxy(_.orientationChange, _));
+        $(window).on('orientationchange.slick.slick-' + _.instanceUid, _.orientationChange.bind(_)); // remove `.proxy()`
 
-        $(window).on('resize.slick.slick-' + _.instanceUid, $.proxy(_.resize, _));
+        $(window).on('resize.slick.slick-' + _.instanceUid, _.resize.bind(_)); // remove `.proxy()`
 
-        $('[draggable!=true]', _.$slideTrack).on('dragstart', _.preventDefault);
+        $('[draggable="false"]', _.$slideTrack).on('dragstart', _.preventDefault);
 
         $(window).on('load.slick.slick-' + _.instanceUid, _.setPosition);
         $(_.setPosition);
@@ -1554,9 +1567,12 @@
                     imageToLoad = document.createElement('img');
 
                 imageToLoad.onload = function() {
-
-                    image
-                        .animate({ opacity: 0 }, 100, function() {
+                    // replace `.animate()`
+                    _.doAnimation(
+                        image,
+                        { opacity: 0 },
+                        { duration: 100 },
+                        function() {
 
                             if (imageSrcSet) {
                                 image
@@ -1568,15 +1584,21 @@
                                 }
                             }
 
-                            image
-                                .attr('src', imageSource)
-                                .animate({ opacity: 1 }, 200, function() {
+                            image.attr('src', imageSource)
+                            // replace `.animate()`
+                            _.doAnimation(
+                                image,
+                                { opacity: 0 },
+                                { duration: 100 },
+                                function() {
                                     image
                                         .removeAttr('data-lazy data-srcset data-sizes')
                                         .removeClass('slick-loading');
-                                });
+                                }
+                            )
                             _.$slider.trigger('lazyLoaded', [_, image, imageSource]);
-                        });
+                        }
+                    );
 
                 };
 
@@ -1744,7 +1766,7 @@
     Slick.prototype.prev = Slick.prototype.slickPrev = function() {
 
         var _ = this;
-
+        console.log(_);
         _.changeSlide({
             data: {
                 message: 'previous'
@@ -1887,7 +1909,7 @@
         var _ = this, breakpoint, currentBreakpoint, l,
             responsiveSettings = _.options.responsive || null;
 
-        if ( $.type(responsiveSettings) === 'array' && responsiveSettings.length ) {
+        if ( Array.isArray(responsiveSettings) && responsiveSettings.length ) { // replace: $.type()
 
             _.respondTo = _.options.respondTo || 'window';
 
@@ -2011,7 +2033,7 @@
 
         _.$slides = _.$slideTrack.children(this.options.slide);
 
-        _.$slideTrack.children(this.options.slide).detach();
+        _.$slideTrack.children(this.options.slide).remove(); // replace: detach(): https://api.jquery.com/detach/
 
         _.$slideTrack.append(_.$slides);
 
@@ -2151,19 +2173,19 @@
 
         var _ = this, l, item, option, value, refresh = false, type;
 
-        if( $.type( arguments[0] ) === 'object' ) {
+        if( typeof arguments[0] === 'object' ) { // replace: $.type()
 
             option =  arguments[0];
             refresh = arguments[1];
             type = 'multiple';
 
-        } else if ( $.type( arguments[0] ) === 'string' ) {
+        } else if ( typeof arguments[0] === 'string' ) { // replace: $.type()
 
             option =  arguments[0];
             value = arguments[1];
             refresh = arguments[2];
 
-            if ( arguments[0] === 'responsive' && $.type( arguments[1] ) === 'array' ) {
+            if ( arguments[0] === 'responsive' && Array.isArray( arguments[1] ) ) { // replace: $.type()
 
                 type = 'responsive';
 
@@ -2193,7 +2215,7 @@
 
             for ( item in value ) {
 
-                if( $.type( _.options.responsive ) !== 'array' ) {
+                if( !Array.isArray( _.options.responsive ) ) { // replace: $.type()
 
                     _.options.responsive = [ value[item] ];
 
@@ -2753,6 +2775,12 @@
 
     Slick.prototype.swipeHandler = function(event) {
 
+        if (!(event instanceof Event)) {
+            var eventData = event;
+            event = arguments[1];
+            event.data = eventData;
+        }
+
         var _ = this;
 
         if ((_.options.swipe === false) || ('ontouchend' in document && _.options.swipe === false)) {
@@ -2899,7 +2927,8 @@
 
             _.unload();
 
-            _.$slideTrack.children(this.options.slide).detach();
+            // var detached = _.$slideTrack.children(this.options.slide)
+            _.$slideTrack.children(this.options.slide).remove(); // replace: detach()
 
             _.$slidesCache.appendTo(_.$slideTrack);
 
@@ -2985,8 +3014,8 @@
 
             _.$dots
                 .find('li')
-                    .removeClass('slick-active')
-                    .end();
+                    .removeClass('slick-active');
+                    // .end();
 
             _.$dots
                 .find('li')
